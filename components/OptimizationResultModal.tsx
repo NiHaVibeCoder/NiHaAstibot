@@ -6,6 +6,8 @@ interface OptimizationResult {
   optimalSettings: {
     riskLevel: number;
     dipsSensitivity: number;
+    stopLossPercentage: number;
+    sellTriggerPercentage: number;
   };
   buyAndHoldProfit: number;
 }
@@ -64,6 +66,14 @@ export default function OptimizationResultModal({ isOpen, onClose, result, tradi
                  <div className="flex justify-between items-center p-3 bg-slate-800 rounded-md">
                     <span className="text-slate-400">Optimal Dips Sensitivity:</span>
                     <span className="font-mono text-lg text-white">{result.optimalSettings.dipsSensitivity}</span>
+                </div>
+                 <div className="flex justify-between items-center p-3 bg-slate-800 rounded-md">
+                    <span className="text-slate-400">Optimal Stop Loss (%):</span>
+                    <span className="font-mono text-lg text-white">{result.optimalSettings.stopLossPercentage}</span>
+                </div>
+                 <div className="flex justify-between items-center p-3 bg-slate-800 rounded-md">
+                    <span className="text-slate-400">Optimal Take Profit (%):</span>
+                    <span className="font-mono text-lg text-white">{result.optimalSettings.sellTriggerPercentage}</span>
                 </div>
             </div>
 

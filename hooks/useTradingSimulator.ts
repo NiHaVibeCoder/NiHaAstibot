@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import type { TradingSettings, ChartDataPoint, Trade, Account, SimulationSummary, ConnectionStatus } from '../types';
 import { TradeType } from '../types';
 import { CHART_DATA_LIMIT, SIMULATION_TICK_MS } from '../constants';
+import { sendTelegramMessage } from '../services/telegramService'; // Import Telegram service
 
 // Helper to calculate Simple Moving Average (SMA)
 const calculateSMA = (data: number[], period: number): number | undefined => {
@@ -29,6 +30,7 @@ export const useTradingSimulator = (initialSettings: TradingSettings, backtestDa
   const simulationIntervalRef = useRef<number | null>(null);
   const stopTimerRef = useRef<number | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
+  const periodicTelegramTimerRef = useRef<number | null>(null); // New ref for periodic Telegram messages
   const tradeIdCounterRef = useRef<number>(0);
   const openPositionsRef = useRef<Trade[]>([]);
   const backtestIndexRef = useRef<number>(0);
@@ -45,6 +47,16 @@ export const useTradingSimulator = (initialSettings: TradingSettings, backtestDa
   useEffect(() => {
     summaryStateRef.current = { account, currentPrice, trades, chartData, settings };
   }, [account, currentPrice, trades, chartData, settings]);
+
+  // Function to send Telegram messages
+  const sendTelegramMessageWrapper = useCallback((message: string) => {
+    const { botToken, chatId } = settings.telegramSettings;
+    if (botToken && chatId) {
+      sendTelegramMessage(botToken, chatId, message);
+    } else {
+      console.warn('Telegram bot not configured. Skipping message.');
+    }
+  }, [settings.telegramSettings]);
 
   // Reset simulation state
   const resetSimulation = useCallback(() => {
@@ -78,8 +90,11 @@ export const useTradingSimulator = (initialSettings: TradingSettings, backtestDa
     }
     if (!backtestData) {
       setConnectionStatus('disconnected');
+      if (settings.telegramSettings.enableErrorNotifications) {
+        sendTelegramMessageWrapper(`<b>🚨 Verbindung unterbrochen!</b> Astibot hat die Verbindung zu den Marktdaten verloren. Es wird versucht, die Verbindung wiederherzustellen.`);
+      }
     }
-  }, [backtestData]);
+  }, [backtestData, settings.telegramSettings.enableErrorNotifications, sendTelegramMessageWrapper]);
 
   // The core simulation tick logic
   const runSimulationTick = useCallback(() => {
@@ -186,6 +201,19 @@ export const useTradingSimulator = (initialSettings: TradingSettings, backtestDa
             newBase -= sellAmount;
             tradeExecuted = { id: tradeIdCounterRef.current++, type: TradeType.SELL, price: newPrice, time: newTime, amount: sellAmount, reason: reasonForSale };
             openPositions.splice(positionIndex, 1); // Remove sold position
+            
+            // Send Telegram Sell Notification
+            if (settings.telegramSettings.enableSellNotifications) {
+              const formattedProfit = ((newPrice - positionToSell.price) / positionToSell.price * 100).toFixed(2);
+              sendTelegramMessageWrapper(
+                `<b>📉 VERKAUF</b> ${settings.tradingPair}\n` +
+                `Zeit: ${new Date(newTime).toLocaleString()}\n` +
+                `Preis: ${newPrice.toFixed(2)} ${settings.tradingPair.split('-')[1]}\n` +
+                `Menge: ${sellAmount.toFixed(6)} ${settings.tradingPair.split('-')[0]}\n` +
+                `Grund: ${reasonForSale}\n` +
+                `Gewinn/Verlust: ${formattedProfit}%`
+              );
+            }
         }
         // --- BUY LOGIC ---
         // Can only buy if we didn't sell this tick and have capacity
@@ -199,6 +227,17 @@ export const useTradingSimulator = (initialSettings: TradingSettings, backtestDa
                     newQuote -= tradeAmountQuote;
                     tradeExecuted = { id: tradeIdCounterRef.current++, type: TradeType.BUY, price: newPrice, time: newTime, amount: buyAmount, reason: 'MACD Crossover' };
                     openPositions.push(tradeExecuted);
+
+                    // Send Telegram Buy Notification
+                    if (settings.telegramSettings.enableBuyNotifications) {
+                      sendTelegramMessageWrapper(
+                        `<b>📈 KAUF</b> ${settings.tradingPair}\n` +
+                        `Zeit: ${new Date(newTime).toLocaleString()}\n` +
+                        `Preis: ${newPrice.toFixed(2)} ${settings.tradingPair.split('-')[1]}\n` +
+                        `Menge: ${buyAmount.toFixed(6)} ${settings.tradingPair.split('-')[0]}\n` +
+                        `Grund: MACD Crossover`
+                      );
+                    }
                 }
             }
         }
@@ -218,7 +257,7 @@ export const useTradingSimulator = (initialSettings: TradingSettings, backtestDa
 
       return updatedData;
     });
-  }, [settings, backtestData, disconnect]);
+  }, [settings, backtestData, disconnect, sendTelegramMessageWrapper]);
 
   const connect = useCallback(() => {
     if (reconnectTimerRef.current) {
@@ -246,9 +285,15 @@ export const useTradingSimulator = (initialSettings: TradingSettings, backtestDa
         if (simulationIntervalRef.current) clearInterval(simulationIntervalRef.current);
         simulationIntervalRef.current = window.setInterval(runSimulationTick, SIMULATION_TICK_MS);
         setConnectionStatus('connected');
+
+        // Send Telegram connection success notification if enabled and was previously disconnected
+        if (connectionStatus === 'disconnected' && settings.telegramSettings.enableErrorNotifications) {
+          sendTelegramMessageWrapper(`<b>✅ Verbindung wiederhergestellt!</b> Astibot ist wieder online und empfängt Marktdaten.`);
+        }
+
     }, 1500);
 
-  }, [backtestData, runSimulationTick, settings.backtestSpeed]);
+  }, [backtestData, runSimulationTick, settings.backtestSpeed, settings.telegramSettings.enableErrorNotifications, sendTelegramMessageWrapper, connectionStatus]);
 
   // Effect for handling reconnection
   useEffect(() => {
@@ -266,6 +311,44 @@ export const useTradingSimulator = (initialSettings: TradingSettings, backtestDa
     };
   }, [connectionStatus, isRunning, connect]);
 
+  // Effect for handling Telegram periodic messages
+  useEffect(() => {
+    if (isRunning && !backtestData && settings.telegramSettings.enablePeriodicMessages) {
+      const intervalMs = {
+        '30m': 30 * 60 * 1000,
+        '1h': 60 * 60 * 1000,
+        '12h': 12 * 60 * 60 * 1000,
+        '24h': 24 * 60 * 60 * 1000,
+        '48h': 48 * 60 * 60 * 1000,
+      }[settings.telegramSettings.periodicMessageInterval];
+
+      if (periodicTelegramTimerRef.current) {
+        clearInterval(periodicTelegramTimerRef.current);
+      }
+
+      periodicTelegramTimerRef.current = window.setInterval(() => {
+        sendTelegramMessageWrapper(
+          `<b>🟢 Astibot Status-Update (${settings.tradingPair})</b>\n` +
+          `Der Bot ist aktiv und die Verbindung zur Börse ist stabil.\n` +
+          `Aktueller Profit: ${profit.toFixed(2)} ${settings.tradingPair.split('-')[1]}`
+        );
+      }, intervalMs);
+
+      return () => {
+        if (periodicTelegramTimerRef.current) {
+          clearInterval(periodicTelegramTimerRef.current);
+          periodicTelegramTimerRef.current = null;
+        }
+      };
+    } else {
+      if (periodicTelegramTimerRef.current) {
+        clearInterval(periodicTelegramTimerRef.current);
+        periodicTelegramTimerRef.current = null;
+      }
+    }
+  }, [isRunning, backtestData, settings.telegramSettings, sendTelegramMessageWrapper, profit, settings.tradingPair]);
+
+
   useEffect(() => {
     if (isRunning) {
       resetSimulation();
@@ -274,6 +357,10 @@ export const useTradingSimulator = (initialSettings: TradingSettings, backtestDa
       if (!backtestData && settings.simulationDuration > 0) {
         stopTimerRef.current = window.setTimeout(() => {
           setIsRunning(false);
+          // Send Telegram message when simulation stops automatically
+          if (settings.telegramSettings.enableErrorNotifications) {
+            sendTelegramMessageWrapper(`<b>🛑 Astibot hat die Simulation für ${settings.tradingPair} beendet</b>, da die eingestellte Dauer von ${settings.simulationDuration} Minuten erreicht wurde.`);
+          }
         }, settings.simulationDuration * 60 * 1000);
       }
     } else {
@@ -285,6 +372,10 @@ export const useTradingSimulator = (initialSettings: TradingSettings, backtestDa
       if (stopTimerRef.current) {
         clearTimeout(stopTimerRef.current);
         stopTimerRef.current = null;
+      }
+      if (periodicTelegramTimerRef.current) { // Clear periodic timer on stop
+        clearInterval(periodicTelegramTimerRef.current);
+        periodicTelegramTimerRef.current = null;
       }
       
       setConnectionStatus('connected');
@@ -321,12 +412,23 @@ export const useTradingSimulator = (initialSettings: TradingSettings, backtestDa
               sellCount: latestTrades.filter(t => t.type === TradeType.SELL).length,
               trades: latestTrades,
           });
+
+          // Send Telegram summary on manual stop if configured
+          if (settings.telegramSettings.enableErrorNotifications) { // Using error notification setting for general stop message
+            sendTelegramMessageWrapper(
+              `<b>🛑 Astibot Simulation beendet für ${settings.tradingPair}</b>\n` +
+              `Gesamtgewinn (Bot): ${totalProfit.toFixed(2)} ${latestSettings.tradingPair.split('-')[1]}\n` +
+              `Buy & Hold Gewinn: ${buyAndHoldProfit.toFixed(2)} ${latestSettings.tradingPair.split('-')[1]}\n` +
+              `Käufe: ${latestTrades.filter(t => t.type === TradeType.BUY).length}, Verkäufe: ${latestTrades.filter(t => t.type === TradeType.SELL).length}`
+            );
+          }
       }
     }
     
     return () => {
       if (simulationIntervalRef.current) clearInterval(simulationIntervalRef.current);
       if (stopTimerRef.current) clearTimeout(stopTimerRef.current);
+      if (periodicTelegramTimerRef.current) clearInterval(periodicTelegramTimerRef.current); // Cleanup
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRunning]);
@@ -341,7 +443,7 @@ export const useTradingSimulator = (initialSettings: TradingSettings, backtestDa
     // effect to trigger when settings/data change, NOT when the simulation stops.
     // This prevents the summary data from being wiped before it can be displayed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.initialBalance, settings.tradingPair, backtestData, resetSimulation]);
+  }, [settings.initialBalance, settings.tradingPair, backtestData, resetSimulation, settings.telegramSettings]); // Added telegramSettings to ensure reset on changes
 
   useEffect(() => {
     const totalValue = account.quote + account.base * currentPrice;

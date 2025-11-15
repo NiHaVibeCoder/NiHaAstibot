@@ -18,24 +18,24 @@ interface ControlPanelProps {
   isLiveConnected: boolean;
 }
 
-const Slider: React.FC<{ label: string; value: number; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; disabled: boolean }> = ({ label, value, onChange, disabled }) => (
+const Slider: React.FC<{ label: string; value: number; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; disabled: boolean; min?: string; max?: string; }> = ({ label, value, onChange, disabled, min = "1", max = "100" }) => (
     <div className="flex-1 min-w-[150px]">
         <div className="flex justify-between text-sm text-slate-400 px-1">
             <span>{label}</span>
-            <span className="font-mono text-slate-300">{value}</span>
+            <span className="font-mono text-slate-300">{value}{label.includes('(%)') ? '%' : ''}</span>
         </div>
         <input
             type="range"
-            min="1"
-            max="100"
+            min={min}
+            max={max}
             value={value}
             onChange={onChange}
             disabled={disabled}
             className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
         />
          <div className="flex justify-between text-xs text-slate-500 px-1">
-            <span>Low</span>
-            <span>High</span>
+            <span>{min === "0" ? 'Off' : 'Low'}</span>
+            <span>{max === "0" ? 'Off' : 'High'}</span>
         </div>
     </div>
 );
@@ -100,7 +100,7 @@ function ControlPanelComponent({ settings, onSettingsChange, isRunning, onToggle
             </button>
       </div>
 
-      <div className="flex-grow w-full md:w-auto flex items-center gap-4">
+      <div className="w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
          <Slider 
               label="Risk level" 
               value={settings.riskLevel}
@@ -113,6 +113,22 @@ function ControlPanelComponent({ settings, onSettingsChange, isRunning, onToggle
               onChange={(e) => onSettingsChange({ dipsSensitivity: Number(e.target.value) })}
               disabled={areParamsDisabled}
           />
+          <Slider
+              label="Stop Loss (%)"
+              value={settings.stopLossPercentage}
+              onChange={(e) => onSettingsChange({ stopLossPercentage: Number(e.target.value) })}
+              disabled={areParamsDisabled}
+              min="1"
+              max="20"
+         />
+          <Slider
+              label="Take Profit (%)"
+              value={settings.sellTriggerPercentage}
+              onChange={(e) => onSettingsChange({ sellTriggerPercentage: Number(e.target.value) })}
+              disabled={areParamsDisabled}
+              min="0"
+              max="20"
+         />
       </div>
     </div>
   );

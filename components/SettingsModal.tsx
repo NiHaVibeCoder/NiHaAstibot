@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import type { ChartDataPoint, TradingSettings, BacktestData } from '../types';
+import type { ChartDataPoint, TradingSettings, BacktestData, TelegramSettings } from '../types';
 import HistoricalDataSelector from './HistoricalDataSelector';
+import TelegramSettingsTab from './TelegramSettingsTab'; // Import the new component
 
 interface CoinbaseProduct {
   id: string;
@@ -228,6 +229,48 @@ const GeneralSettingsTab: React.FC<{ settings: TradingSettings; onSettingsChange
                             Die maximale Anzahl offener Kaufpositionen, die der Bot gleichzeitig halten kann.
                         </p>
                     </div>
+                    <div>
+                        <label htmlFor="stopLossPercentage" className="block text-sm font-medium text-slate-300 mb-1">
+                            Stop Loss (%)
+                        </label>
+                        <div className="flex items-center gap-4">
+                            <input
+                                type="number"
+                                id="stopLossPercentage"
+                                min="1"
+                                max="100"
+                                step="1"
+                                value={settings.stopLossPercentage}
+                                onChange={(e) => onSettingsChange({ stopLossPercentage: Number(e.target.value) })}
+                                className="w-full sm:w-1/3 bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                            />
+                            <span className="font-mono text-slate-300">%</span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">
+                            Der Bot verkauft eine Position, wenn der Preis um diesen Prozentsatz unter den Kaufpreis fällt.
+                        </p>
+                    </div>
+                    <div>
+                        <label htmlFor="sellTriggerPercentage" className="block text-sm font-medium text-slate-300 mb-1">
+                            Take Profit (%)
+                        </label>
+                        <div className="flex items-center gap-4">
+                            <input
+                                type="number"
+                                id="sellTriggerPercentage"
+                                min="0"
+                                max="100"
+                                step="1"
+                                value={settings.sellTriggerPercentage}
+                                onChange={(e) => onSettingsChange({ sellTriggerPercentage: Number(e.target.value) })}
+                                className="w-full sm:w-1/3 bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                            />
+                            <span className="font-mono text-slate-300">%</span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">
+                            Der Bot verkauft eine Position, wenn der Preis um diesen Prozentsatz über dem Kaufpreis liegt. Setze auf 0, um nur mit MACD zu verkaufen.
+                        </p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -319,7 +362,7 @@ const LiveTradingSettingsTab: React.FC<{ onLiveConnectionChange: (connected: boo
 };
 
 export default function SettingsModal({ isOpen, onClose, settings, onSettingsChange, onHistoricalDataLoaded, backtestData, onClearBacktestData, onLiveConnectionChange }: SettingsModalProps): React.ReactElement | null {
-  const [activeTab, setActiveTab] = useState<'general' | 'live' | 'simulation'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'live' | 'simulation' | 'telegram'>('general');
 
   if (!isOpen) return null;
 
@@ -327,6 +370,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
       { id: 'general', label: 'Allgemein' },
       { id: 'live', label: 'Real trading mode' },
       { id: 'simulation', label: 'Simulation mode' },
+      { id: 'telegram', label: 'Telegram Bot' }, // New tab for Telegram
   ];
 
   const renderContent = () => {
@@ -414,6 +458,15 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
             </div>
             <HistoricalDataSelector tradingPair={settings.tradingPair} onHistoricalDataLoaded={onHistoricalDataLoaded} onClose={onClose} />
           </>
+        );
+      case 'telegram':
+        return (
+            <TelegramSettingsTab 
+                telegramSettings={settings.telegramSettings}
+                onTelegramSettingsChange={(newTelegramSettings) => 
+                    onSettingsChange({ telegramSettings: { ...settings.telegramSettings, ...newTelegramSettings } })
+                }
+            />
         );
       default:
         return null;

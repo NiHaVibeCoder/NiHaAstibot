@@ -4,6 +4,16 @@ export interface BacktestData {
   end: string;
 }
 
+export interface TelegramSettings {
+  botToken: string;
+  chatId: string;
+  enablePeriodicMessages: boolean;
+  periodicMessageInterval: '30m' | '1h' | '12h' | '24h' | '48h';
+  enableErrorNotifications: boolean;
+  enableBuyNotifications: boolean;
+  enableSellNotifications: boolean;
+}
+
 export interface TradingSettings {
   tradingPair: string;
   dipsSensitivity: number;
@@ -15,6 +25,7 @@ export interface TradingSettings {
   maxConcurrentPositions: number;
   simulationDuration: number; // in minutes, 0 for unlimited
   backtestSpeed: number; // in milliseconds per tick
+  telegramSettings: TelegramSettings;
 }
 
 export interface ChartDataPoint {

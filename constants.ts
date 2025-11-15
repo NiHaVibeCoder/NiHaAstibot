@@ -20,6 +20,15 @@ export const DEFAULT_SETTINGS: TradingSettings = {
   maxConcurrentPositions: 5,
   simulationDuration: 10, // in minutes, 0 for unlimited
   backtestSpeed: 50, // ms per tick for backtesting
+  telegramSettings: {
+    botToken: '',
+    chatId: '',
+    enablePeriodicMessages: false,
+    periodicMessageInterval: '1h',
+    enableErrorNotifications: false,
+    enableBuyNotifications: false,
+    enableSellNotifications: false,
+  },
 };
 
 export const CHART_DATA_LIMIT = 200; // Max number of data points on the chart

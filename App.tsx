@@ -18,6 +18,8 @@ interface OptimizationResult {
   optimalSettings: {
     riskLevel: number;
     dipsSensitivity: number;
+    stopLossPercentage: number;
+    sellTriggerPercentage: number;
   };
   buyAndHoldProfit: number;
 }
@@ -112,27 +114,39 @@ export default function App(): React.ReactElement {
 
     const riskLevels = [10, 20, 30, 40, 50, 60, 70, 80, 90];
     const sensitivities = [10, 20, 30, 40, 50, 60, 70, 80, 90];
-    const totalSimulations = riskLevels.length * sensitivities.length;
+    const stopLosses = [2, 5, 10, 15]; // Percentages
+    const sellTriggers = [0, 2, 5, 10, 15]; // Percentages (0 for MACD-based sell)
+    
+    const totalSimulations = riskLevels.length * sensitivities.length * stopLosses.length * sellTriggers.length;
     let completedSimulations = 0;
 
     let bestProfit = -Infinity;
-    let optimalSettings = { riskLevel: settings.riskLevel, dipsSensitivity: settings.dipsSensitivity };
+    let optimalSettings = {
+      riskLevel: settings.riskLevel,
+      dipsSensitivity: settings.dipsSensitivity,
+      stopLossPercentage: settings.stopLossPercentage,
+      sellTriggerPercentage: settings.sellTriggerPercentage,
+    };
     
     for (const riskLevel of riskLevels) {
         for (const dipsSensitivity of sensitivities) {
-            const tempSettings = { ...settings, riskLevel, dipsSensitivity };
-            const profit = runHeadlessSimulation(tempSettings, backtestData.data);
+            for (const stopLossPercentage of stopLosses) {
+                for (const sellTriggerPercentage of sellTriggers) {
+                    const tempSettings = { ...settings, riskLevel, dipsSensitivity, stopLossPercentage, sellTriggerPercentage };
+                    const profit = runHeadlessSimulation(tempSettings, backtestData.data);
 
-            if (profit > bestProfit) {
-                bestProfit = profit;
-                optimalSettings = { riskLevel, dipsSensitivity };
+                    if (profit > bestProfit) {
+                        bestProfit = profit;
+                        optimalSettings = { riskLevel, dipsSensitivity, stopLossPercentage, sellTriggerPercentage };
+                    }
+                    
+                    completedSimulations++;
+                    await new Promise(resolve => requestAnimationFrame(() => {
+                        setOptimizationProgress((completedSimulations / totalSimulations) * 100);
+                        resolve(null);
+                    }));
+                }
             }
-            
-            completedSimulations++;
-            await new Promise(resolve => requestAnimationFrame(() => {
-                setOptimizationProgress((completedSimulations / totalSimulations) * 100);
-                resolve(null);
-            }));
         }
     }
     
@@ -149,6 +163,8 @@ export default function App(): React.ReactElement {
           handleSettingsChange({
               riskLevel: optimizationResult.optimalSettings.riskLevel,
               dipsSensitivity: optimizationResult.optimalSettings.dipsSensitivity,
+              stopLossPercentage: optimizationResult.optimalSettings.stopLossPercentage,
+              sellTriggerPercentage: optimizationResult.optimalSettings.sellTriggerPercentage,
           });
       }
       setIsOptimizationResultModalOpen(false);
