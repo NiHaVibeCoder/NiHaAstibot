@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { TelegramSettings } from '../types';
+import { testTelegramConnection, sendTelegramMessage, getTestMessageForNotificationType } from '../services/telegramService';
 
 interface TelegramSettingsTabProps {
   telegramSettings: TelegramSettings;
@@ -7,12 +8,89 @@ interface TelegramSettingsTabProps {
 }
 
 const TelegramSettingsTab: React.FC<TelegramSettingsTabProps> = ({ telegramSettings, onTelegramSettingsChange }) => {
-  const handleToggle = (key: keyof TelegramSettings) => {
-    onTelegramSettingsChange({ [key]: !telegramSettings[key] });
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [isSendingTestMessage, setIsSendingTestMessage] = useState<string | null>(null);
+
+  const handleToggle = async (key: keyof TelegramSettings) => {
+    // If enabling a notification type and connection is tested, send test message
+    if (telegramSettings.isTested && !telegramSettings[key] && 
+        (key === 'enablePeriodicMessages' || key === 'enableErrorNotifications' || 
+         key === 'enableBuyNotifications' || key === 'enableSellNotifications')) {
+      
+      setIsSendingTestMessage(key);
+      
+      try {
+        let notificationType: 'periodic' | 'error' | 'buy' | 'sell';
+        switch (key) {
+          case 'enablePeriodicMessages':
+            notificationType = 'periodic';
+            break;
+          case 'enableErrorNotifications':
+            notificationType = 'error';
+            break;
+          case 'enableBuyNotifications':
+            notificationType = 'buy';
+            break;
+          case 'enableSellNotifications':
+            notificationType = 'sell';
+            break;
+          default:
+            notificationType = 'periodic';
+        }
+        
+        const testMessage = getTestMessageForNotificationType(notificationType);
+        await sendTelegramMessage(telegramSettings.botToken, telegramSettings.chatId, testMessage);
+        
+        // Enable the notification type after successful test message
+        onTelegramSettingsChange({ [key]: true });
+        const notificationNames: Record<string, string> = {
+          enablePeriodicMessages: 'Regelmäßige Status-Nachrichten',
+          enableErrorNotifications: 'Fehlermeldungen',
+          enableBuyNotifications: 'Kauf-Benachrichtigungen',
+          enableSellNotifications: 'Verkauf-Benachrichtigungen',
+        };
+        setTestResult({ success: true, message: `Testnachricht für "${notificationNames[key] || key}" erfolgreich gesendet!` });
+      } catch (error: any) {
+        setTestResult({ success: false, message: `Fehler beim Senden der Testnachricht: ${error?.message || 'Unbekannter Fehler'}` });
+      } finally {
+        setIsSendingTestMessage(null);
+      }
+    } else {
+      // Just toggle if disabling or connection not tested
+      onTelegramSettingsChange({ [key]: !telegramSettings[key] });
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    onTelegramSettingsChange({ [e.target.id]: e.target.value });
+    const newValue = e.target.value;
+    onTelegramSettingsChange({ [e.target.id]: newValue });
+    // Reset test status if botToken or chatId changes
+    if ((e.target.id === 'botToken' || e.target.id === 'chatId') && telegramSettings.isTested) {
+      onTelegramSettingsChange({ isTested: false });
+      setTestResult(null);
+    }
+  };
+
+  const handleTestConnection = async () => {
+    setIsTesting(true);
+    setTestResult(null);
+    
+    try {
+      const result = await testTelegramConnection(telegramSettings.botToken, telegramSettings.chatId);
+      setTestResult(result);
+      
+      if (result.success) {
+        onTelegramSettingsChange({ isTested: true });
+      } else {
+        onTelegramSettingsChange({ isTested: false });
+      }
+    } catch (error: any) {
+      setTestResult({ success: false, message: `Unerwarteter Fehler: ${error?.message || 'Unbekannter Fehler'}` });
+      onTelegramSettingsChange({ isTested: false });
+    } finally {
+      setIsTesting(false);
+    }
   };
 
   const IntervalOptions = [
@@ -64,24 +142,60 @@ const TelegramSettingsTab: React.FC<TelegramSettingsTabProps> = ({ telegramSetti
             Um deine Chat ID zu finden, sende eine Nachricht an deinen Bot und verwende dann einen Service wie <a href="https://api.telegram.org/bot[YOUR_BOT_TOKEN]/getUpdates" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">getUpdates</a>.
           </p>
         </div>
+        
+        <div className="mt-4">
+          <button
+            onClick={handleTestConnection}
+            disabled={isTesting || !telegramSettings.botToken || !telegramSettings.chatId}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 text-white rounded-md text-sm font-semibold transition"
+          >
+            {isTesting ? 'Teste Verbindung...' : 'Verbindung testen'}
+          </button>
+          
+          {testResult && (
+            <div className={`mt-3 p-3 rounded-md text-sm ${
+              testResult.success 
+                ? 'bg-green-900/50 border border-green-700 text-green-300' 
+                : 'bg-red-900/50 border border-red-700 text-red-300'
+            }`}>
+              {testResult.message}
+            </div>
+          )}
+          
+          {telegramSettings.isTested && (
+            <div className="mt-3 p-3 bg-green-900/50 border border-green-700 text-green-300 rounded-md text-sm">
+              ✅ Verbindung erfolgreich getestet. Du kannst jetzt Nachrichtentypen aktivieren.
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="space-y-6">
         <h4 className="text-lg font-semibold text-white mb-4">Nachrichten-Einstellungen</h4>
+        
+        {!telegramSettings.isTested && (
+          <div className="mb-4 p-3 bg-yellow-900/50 border border-yellow-700 text-yellow-300 rounded-md text-sm">
+            ⚠️ Bitte teste zuerst die Bot-Verbindung, bevor du Nachrichtentypen aktivierst.
+          </div>
+        )}
 
         {/* Periodic Status Messages */}
         <div className="flex items-center justify-between">
           <label htmlFor="enablePeriodicMessages" className="text-sm font-medium text-slate-300 flex-1">
             Regelmäßige Status-Nachrichten
+            {isSendingTestMessage === 'enablePeriodicMessages' && (
+              <span className="ml-2 text-xs text-blue-400">Sende Testnachricht...</span>
+            )}
           </label>
           <input
             type="checkbox"
             id="enablePeriodicMessages"
             checked={telegramSettings.enablePeriodicMessages}
             onChange={() => handleToggle('enablePeriodicMessages')}
-            className="sr-only peer"
+            disabled={!telegramSettings.isTested || isSendingTestMessage === 'enablePeriodicMessages'}
+            className="sr-only peer disabled:opacity-50"
           />
-          <div className="relative w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+          <div className="relative w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
         </div>
         {telegramSettings.enablePeriodicMessages && (
           <div className="ml-6 mt-2">
@@ -108,15 +222,19 @@ const TelegramSettingsTab: React.FC<TelegramSettingsTabProps> = ({ telegramSetti
         <div className="flex items-center justify-between mt-4">
           <label htmlFor="enableErrorNotifications" className="text-sm font-medium text-slate-300 flex-1">
             Fehlermeldungen senden
+            {isSendingTestMessage === 'enableErrorNotifications' && (
+              <span className="ml-2 text-xs text-blue-400">Sende Testnachricht...</span>
+            )}
           </label>
           <input
             type="checkbox"
             id="enableErrorNotifications"
             checked={telegramSettings.enableErrorNotifications}
             onChange={() => handleToggle('enableErrorNotifications')}
-            className="sr-only peer"
+            disabled={!telegramSettings.isTested || isSendingTestMessage === 'enableErrorNotifications'}
+            className="sr-only peer disabled:opacity-50"
           />
-          <div className="relative w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+          <div className="relative w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
         </div>
         <p className="text-xs text-slate-500 mt-1 ml-6">
             Erhalte Benachrichtigungen bei Verbindungsabbrüchen oder anderen kritischen Fehlern.
@@ -126,15 +244,19 @@ const TelegramSettingsTab: React.FC<TelegramSettingsTabProps> = ({ telegramSetti
         <div className="flex items-center justify-between mt-4">
           <label htmlFor="enableBuyNotifications" className="text-sm font-medium text-slate-300 flex-1">
             Kauf-Benachrichtigungen senden
+            {isSendingTestMessage === 'enableBuyNotifications' && (
+              <span className="ml-2 text-xs text-blue-400">Sende Testnachricht...</span>
+            )}
           </label>
           <input
             type="checkbox"
             id="enableBuyNotifications"
             checked={telegramSettings.enableBuyNotifications}
             onChange={() => handleToggle('enableBuyNotifications')}
-            className="sr-only peer"
+            disabled={!telegramSettings.isTested || isSendingTestMessage === 'enableBuyNotifications'}
+            className="sr-only peer disabled:opacity-50"
           />
-          <div className="relative w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+          <div className="relative w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
         </div>
         <p className="text-xs text-slate-500 mt-1 ml-6">
             Erhalte eine Nachricht, wenn der Bot eine Kauforder ausführt (inkl. Details).
@@ -144,15 +266,19 @@ const TelegramSettingsTab: React.FC<TelegramSettingsTabProps> = ({ telegramSetti
         <div className="flex items-center justify-between mt-4">
           <label htmlFor="enableSellNotifications" className="text-sm font-medium text-slate-300 flex-1">
             Verkauf-Benachrichtigungen senden
+            {isSendingTestMessage === 'enableSellNotifications' && (
+              <span className="ml-2 text-xs text-blue-400">Sende Testnachricht...</span>
+            )}
           </label>
           <input
             type="checkbox"
             id="enableSellNotifications"
             checked={telegramSettings.enableSellNotifications}
             onChange={() => handleToggle('enableSellNotifications')}
-            className="sr-only peer"
+            disabled={!telegramSettings.isTested || isSendingTestMessage === 'enableSellNotifications'}
+            className="sr-only peer disabled:opacity-50"
           />
-          <div className="relative w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+          <div className="relative w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
         </div>
         <p className="text-xs text-slate-500 mt-1 ml-6">
             Erhalte eine Nachricht, wenn der Bot eine Verkauforder ausführt (inkl. Details).

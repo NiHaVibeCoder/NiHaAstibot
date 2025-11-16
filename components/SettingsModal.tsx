@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import type { ChartDataPoint, TradingSettings, BacktestData, TelegramSettings } from '../types';
 import HistoricalDataSelector from './HistoricalDataSelector';
 import TelegramSettingsTab from './TelegramSettingsTab'; // Import the new component
+import { saveLiveTradingCredentials, loadLiveTradingCredentials } from '../services/settingsService';
 
 interface CoinbaseProduct {
   id: string;
@@ -22,6 +23,7 @@ interface SettingsModalProps {
   backtestData: BacktestData | null;
   onClearBacktestData: () => void;
   onLiveConnectionChange: (connected: boolean) => void;
+  onResetSettings: () => void;
 }
 
 const fetchWithRetry = async (url: string, retries = 5, delay = 1000, backoff = 2): Promise<any> => {
@@ -283,6 +285,15 @@ const LiveTradingSettingsTab: React.FC<{ onLiveConnectionChange: (connected: boo
     const [isVerifying, setIsVerifying] = useState(false);
     const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+    // Load saved credentials on mount
+    useEffect(() => {
+        const saved = loadLiveTradingCredentials();
+        if (saved) {
+            setApiKey(saved.apiKey);
+            setApiSecret(saved.apiSecret);
+        }
+    }, []);
+
     const handleSaveCredentials = async () => {
         setIsVerifying(true);
         setFeedback(null);
@@ -292,6 +303,8 @@ const LiveTradingSettingsTab: React.FC<{ onLiveConnectionChange: (connected: boo
 
         // Simple validation logic (in a real app, this would be a secure API call)
         if (apiKey.trim().length > 5 && apiSecret.trim().length > 5) {
+            // Save credentials to localStorage
+            saveLiveTradingCredentials({ apiKey: apiKey.trim(), apiSecret: apiSecret.trim() });
             setFeedback({ type: 'success', message: 'Anmeldedaten erfolgreich überprüft und gespeichert!' });
             onLiveConnectionChange(true);
         } else {
@@ -361,7 +374,7 @@ const LiveTradingSettingsTab: React.FC<{ onLiveConnectionChange: (connected: boo
     );
 };
 
-export default function SettingsModal({ isOpen, onClose, settings, onSettingsChange, onHistoricalDataLoaded, backtestData, onClearBacktestData, onLiveConnectionChange }: SettingsModalProps): React.ReactElement | null {
+export default function SettingsModal({ isOpen, onClose, settings, onSettingsChange, onHistoricalDataLoaded, backtestData, onClearBacktestData, onLiveConnectionChange, onResetSettings }: SettingsModalProps): React.ReactElement | null {
   const [activeTab, setActiveTab] = useState<'general' | 'live' | 'simulation' | 'telegram'>('general');
 
   if (!isOpen) return null;
@@ -481,7 +494,16 @@ export default function SettingsModal({ isOpen, onClose, settings, onSettingsCha
       >
         <header className="flex justify-between items-center p-4 border-b border-slate-700">
           <h2 className="text-xl font-bold text-white">Settings</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-white transition text-2xl leading-none" aria-label="Close settings">&times;</button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onResetSettings}
+              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded-md text-sm font-semibold transition text-white"
+              title="Alle Einstellungen zurücksetzen"
+            >
+              Zurücksetzen
+            </button>
+            <button onClick={onClose} className="text-slate-400 hover:text-white transition text-2xl leading-none" aria-label="Close settings">&times;</button>
+          </div>
         </header>
         
         <div className="flex flex-col md:flex-row flex-1 overflow-hidden">

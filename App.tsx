@@ -12,6 +12,7 @@ import { runHeadlessSimulation } from './services/simulationService';
 import TradesModal from './components/TradesModal';
 import SimulationSummaryModal from './components/SimulationSummaryModal';
 import ConfirmationModal from './components/ConfirmationModal';
+import { loadSettings, saveSettings, resetSettings, loadLiveTradingCredentials } from './services/settingsService';
 
 interface OptimizationResult {
   bestProfit: number;
@@ -48,6 +49,9 @@ export default function App(): React.ReactElement {
     hideCancelButton: false,
   });
   
+  // Load settings from localStorage on mount
+  const [initialSettings] = useState(() => loadSettings());
+  
   const {
     chartData,
     trades,
@@ -61,7 +65,21 @@ export default function App(): React.ReactElement {
     simulationSummary,
     backtestProgress,
     connectionStatus,
-  } = useTradingSimulator(DEFAULT_SETTINGS, backtestData?.data ?? null);
+  } = useTradingSimulator(initialSettings, backtestData?.data ?? null);
+
+  // Load live trading credentials on mount
+  useEffect(() => {
+    const credentials = loadLiveTradingCredentials();
+    if (credentials && credentials.apiKey && credentials.apiSecret) {
+      // Auto-verify credentials if they exist
+      setIsLiveConnected(true);
+    }
+  }, []);
+
+  // Save settings whenever they change
+  useEffect(() => {
+    saveSettings(settings);
+  }, [settings]);
 
   useEffect(() => {
     if (simulationSummary) {
@@ -74,7 +92,26 @@ export default function App(): React.ReactElement {
       setBacktestData(null);
       setHasOptimized(false);
     }
-    setSettings(prev => ({ ...prev, ...newSettings }));
+    const updatedSettings = { ...settings, ...newSettings };
+    setSettings(updatedSettings);
+    saveSettings(updatedSettings);
+  };
+
+  const handleResetSettings = () => {
+    setConfirmationState({
+      isOpen: true,
+      title: 'Einstellungen zurücksetzen?',
+      message: 'Möchten Sie wirklich alle Einstellungen auf die Standardwerte zurücksetzen? Dies kann nicht rückgängig gemacht werden.',
+      onConfirm: () => {
+        const reset = resetSettings();
+        setSettings(reset);
+        setIsLiveConnected(false);
+        setConfirmationState(prev => ({ ...prev, isOpen: false }));
+      },
+      confirmText: 'Ja, zurücksetzen',
+      confirmButtonClass: 'bg-red-600 hover:bg-red-700',
+      hideCancelButton: false,
+    });
   };
   
   const handleModeChange = (mode: 'simulation' | 'live') => {
@@ -325,6 +362,7 @@ export default function App(): React.ReactElement {
           backtestData={backtestData}
           onClearBacktestData={handleClearBacktestData}
           onLiveConnectionChange={setIsLiveConnected}
+          onResetSettings={handleResetSettings}
         />
       )}
       {isLoadDataModalOpen && (

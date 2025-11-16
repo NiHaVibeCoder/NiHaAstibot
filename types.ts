@@ -7,6 +7,7 @@ export interface BacktestData {
 export interface TelegramSettings {
   botToken: string;
   chatId: string;
+  isTested: boolean; // Whether the connection has been successfully tested
   enablePeriodicMessages: boolean;
   periodicMessageInterval: '30m' | '1h' | '12h' | '24h' | '48h';
   enableErrorNotifications: boolean;

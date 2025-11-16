@@ -23,6 +23,7 @@ export const DEFAULT_SETTINGS: TradingSettings = {
   telegramSettings: {
     botToken: '',
     chatId: '',
+    isTested: false,
     enablePeriodicMessages: false,
     periodicMessageInterval: '1h',
     enableErrorNotifications: false,
