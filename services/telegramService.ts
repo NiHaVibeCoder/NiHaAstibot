@@ -1,6 +1,20 @@
 // services/telegramService.ts
 
-export async function sendTelegramMessage(botToken: string, chatId: string, message: string): Promise<void> {
+/**
+ * Parses a comma-separated string of chat IDs into an array
+ */
+function parseChatIds(chatIdString: string): string[] {
+  if (!chatIdString) return [];
+  return chatIdString
+    .split(',')
+    .map(id => id.trim())
+    .filter(id => id.length > 0);
+}
+
+/**
+ * Sends a message to a single chat ID
+ */
+async function sendTelegramMessageToSingleChat(botToken: string, chatId: string, message: string): Promise<void> {
   if (!botToken || !chatId || !message) {
     console.warn('Telegram: Missing botToken, chatId, or message. Not sending.');
     return;
@@ -27,11 +41,38 @@ export async function sendTelegramMessage(botToken: string, chatId: string, mess
       console.error('Telegram API error:', errorData);
       throw new Error(`Telegram API error: ${errorData.description || response.statusText}`);
     }
-    console.log('Telegram message sent successfully.');
+    console.log(`Telegram message sent successfully to chat ${chatId}.`);
   } catch (error) {
-    console.error('Error sending Telegram message:', error);
+    console.error(`Error sending Telegram message to chat ${chatId}:`, error);
     throw error;
   }
+}
+
+/**
+ * Sends a message to one or more chat IDs (comma-separated)
+ * Returns an array of results for each chat ID
+ */
+export async function sendTelegramMessage(botToken: string, chatId: string, message: string): Promise<{ success: boolean; chatId: string; error?: string }[]> {
+  if (!botToken || !chatId || !message) {
+    console.warn('Telegram: Missing botToken, chatId, or message. Not sending.');
+    return [];
+  }
+
+  const chatIds = parseChatIds(chatId);
+  if (chatIds.length === 0) {
+    console.warn('Telegram: No valid chat IDs found.');
+    return [];
+  }
+
+  const results = await Promise.allSettled(
+    chatIds.map(id => sendTelegramMessageToSingleChat(botToken, id, message))
+  );
+
+  return results.map((result, index) => ({
+    success: result.status === 'fulfilled',
+    chatId: chatIds[index],
+    error: result.status === 'rejected' ? (result.reason as Error)?.message : undefined,
+  }));
 }
 
 export async function testTelegramConnection(botToken: string, chatId: string): Promise<{ success: boolean; message: string }> {
@@ -39,14 +80,46 @@ export async function testTelegramConnection(botToken: string, chatId: string): 
     return { success: false, message: 'Bot Token und Chat ID müssen ausgefüllt sein.' };
   }
 
+  const chatIds = parseChatIds(chatId);
+  if (chatIds.length === 0) {
+    return { success: false, message: 'Keine gültigen Chat IDs gefunden. Bitte geben Sie mindestens eine Chat ID ein.' };
+  }
+
   try {
     const testMessage = '<b>✅ Verbindungstest erfolgreich!</b>\n\nAstibot kann jetzt Nachrichten an diesen Chat senden.';
-    await sendTelegramMessage(botToken, chatId, testMessage);
-    return { success: true, message: 'Verbindungstest erfolgreich! Testnachricht wurde gesendet.' };
+    const results = await sendTelegramMessage(botToken, chatId, testMessage);
+    
+    const successful = results.filter(r => r.success);
+    const failed = results.filter(r => !r.success);
+    
+    if (successful.length === 0) {
+      // All failed
+      const firstError = failed[0]?.error || 'Unbekannter Fehler';
+      if (firstError.includes('chat not found') || firstError.includes('chat_id')) {
+        return { success: false, message: 'Chat ID(s) sind ungültig. Stelle sicher, dass du eine Nachricht an den Bot gesendet hast.' };
+      } else if (firstError.includes('Unauthorized') || firstError.includes('invalid token')) {
+        return { success: false, message: 'Bot Token ist ungültig. Überprüfe deinen Token von @BotFather.' };
+      }
+      return { success: false, message: `Fehler: ${firstError}` };
+    } else if (failed.length > 0) {
+      // Some succeeded, some failed
+      const failedIds = failed.map(r => r.chatId).join(', ');
+      return { 
+        success: true, 
+        message: `Testnachricht wurde an ${successful.length} von ${results.length} Chat(s) erfolgreich gesendet. Fehler bei: ${failedIds}` 
+      };
+    } else {
+      // All succeeded
+      const chatCount = successful.length;
+      return { 
+        success: true, 
+        message: `Verbindungstest erfolgreich! Testnachricht wurde an ${chatCount} Chat(s) gesendet.` 
+      };
+    }
   } catch (error: any) {
     const errorMessage = error?.message || 'Unbekannter Fehler';
     if (errorMessage.includes('chat not found') || errorMessage.includes('chat_id')) {
-      return { success: false, message: 'Chat ID ist ungültig. Stelle sicher, dass du eine Nachricht an den Bot gesendet hast.' };
+      return { success: false, message: 'Chat ID(s) sind ungültig. Stelle sicher, dass du eine Nachricht an den Bot gesendet hast.' };
     } else if (errorMessage.includes('Unauthorized') || errorMessage.includes('invalid token')) {
       return { success: false, message: 'Bot Token ist ungültig. Überprüfe deinen Token von @BotFather.' };
     }

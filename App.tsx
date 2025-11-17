@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ControlPanel from './components/ControlPanel';
 import InfoPanel from './components/InfoPanel';
 import TradingChart from './components/TradingChart';
-import { useTradingSimulator } from './hooks/useTradingSimulator';
+import { useBackendTradingSimulator } from './hooks/useBackendTradingSimulator';
 import { DEFAULT_SETTINGS } from './constants';
 import type { TradingSettings, ChartDataPoint, SimulationSummary, BacktestData } from './types';
 import SettingsModal from './components/SettingsModal';
@@ -65,7 +65,7 @@ export default function App(): React.ReactElement {
     simulationSummary,
     backtestProgress,
     connectionStatus,
-  } = useTradingSimulator(initialSettings, backtestData?.data ?? null);
+  } = useBackendTradingSimulator(initialSettings, backtestData?.data ?? null);
 
   // Load live trading credentials on mount
   useEffect(() => {

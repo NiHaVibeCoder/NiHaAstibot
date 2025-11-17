@@ -52,7 +52,14 @@ export const useTradingSimulator = (initialSettings: TradingSettings, backtestDa
   const sendTelegramMessageWrapper = useCallback((message: string) => {
     const { botToken, chatId } = settings.telegramSettings;
     if (botToken && chatId) {
-      sendTelegramMessage(botToken, chatId, message);
+      sendTelegramMessage(botToken, chatId, message).then(results => {
+        const failed = results.filter(r => !r.success);
+        if (failed.length > 0) {
+          console.warn(`Telegram: Some messages failed to send. Failed chat IDs: ${failed.map(r => r.chatId).join(', ')}`);
+        }
+      }).catch(error => {
+        console.error('Telegram: Error sending messages:', error);
+      });
     } else {
       console.warn('Telegram bot not configured. Skipping message.');
     }

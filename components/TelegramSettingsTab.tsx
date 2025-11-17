@@ -40,7 +40,17 @@ const TelegramSettingsTab: React.FC<TelegramSettingsTabProps> = ({ telegramSetti
         }
         
         const testMessage = getTestMessageForNotificationType(notificationType);
-        await sendTelegramMessage(telegramSettings.botToken, telegramSettings.chatId, testMessage);
+        const results = await sendTelegramMessage(telegramSettings.botToken, telegramSettings.chatId, testMessage);
+        
+        // Check if at least one message was sent successfully
+        const successful = results.filter(r => r.success);
+        const failed = results.filter(r => !r.success);
+        
+        if (successful.length === 0) {
+          // All failed
+          const firstError = failed[0]?.error || 'Unbekannter Fehler';
+          throw new Error(`Fehler beim Senden: ${firstError}`);
+        }
         
         // Enable the notification type after successful test message
         onTelegramSettingsChange({ [key]: true });
@@ -50,7 +60,16 @@ const TelegramSettingsTab: React.FC<TelegramSettingsTabProps> = ({ telegramSetti
           enableBuyNotifications: 'Kauf-Benachrichtigungen',
           enableSellNotifications: 'Verkauf-Benachrichtigungen',
         };
-        setTestResult({ success: true, message: `Testnachricht für "${notificationNames[key] || key}" erfolgreich gesendet!` });
+        
+        let successMessage = `Testnachricht für "${notificationNames[key] || key}" erfolgreich gesendet!`;
+        if (results.length > 1) {
+          if (failed.length > 0) {
+            successMessage += ` (${successful.length} von ${results.length} Chat(s) erfolgreich)`;
+          } else {
+            successMessage += ` (an ${results.length} Chat(s) gesendet)`;
+          }
+        }
+        setTestResult({ success: true, message: successMessage });
       } catch (error: any) {
         setTestResult({ success: false, message: `Fehler beim Senden der Testnachricht: ${error?.message || 'Unbekannter Fehler'}` });
       } finally {
@@ -128,7 +147,7 @@ const TelegramSettingsTab: React.FC<TelegramSettingsTabProps> = ({ telegramSetti
         </div>
         <div>
           <label htmlFor="chatId" className="block text-sm font-medium text-slate-300 mb-1">
-            Telegram Chat ID
+            Telegram Chat ID(s)
           </label>
           <input
             type="text"
@@ -136,9 +155,21 @@ const TelegramSettingsTab: React.FC<TelegramSettingsTabProps> = ({ telegramSetti
             value={telegramSettings.chatId}
             onChange={handleInputChange}
             className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            placeholder="Die Chat ID für Benachrichtigungen"
+            placeholder="123456789 oder 123456789, 987654321 für mehrere"
           />
-          <p className="text-xs text-slate-500 mt-1">
+          <div className="mt-2 p-3 bg-blue-900/30 border border-blue-700/50 rounded-md">
+            <p className="text-xs text-blue-300 font-semibold mb-1">💡 Mehrere Chat IDs verwenden:</p>
+            <p className="text-xs text-blue-200">
+              Du kannst mehrere Chat IDs eingeben, um Benachrichtigungen an mehrere Empfänger zu senden. Trenne die Chat IDs einfach durch Kommas.
+            </p>
+            <p className="text-xs text-blue-200 mt-2">
+              <strong>Beispiel:</strong> <code className="bg-blue-900/50 px-1 rounded">123456789, 987654321, -1001234567890</code>
+            </p>
+            <p className="text-xs text-blue-200 mt-2">
+              Jede Chat ID erhält die gleichen Benachrichtigungen. Dies ist nützlich, wenn du mehrere Telegram-Chats oder Gruppen benachrichtigen möchtest.
+            </p>
+          </div>
+          <p className="text-xs text-slate-500 mt-2">
             Um deine Chat ID zu finden, sende eine Nachricht an deinen Bot und verwende dann einen Service wie <a href="https://api.telegram.org/bot[YOUR_BOT_TOKEN]/getUpdates" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">getUpdates</a>.
           </p>
         </div>
